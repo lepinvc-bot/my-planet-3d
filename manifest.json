@@ -1,0 +1,10 @@
+{
+    "name": "Моя планета 3D — офлайн",
+    "short_name": "Планета 3D",
+    "start_url": "./index.html",
+    "display": "standalone",
+    "background_color": "#ffffff",
+    "theme_color": "#4a90e2",
+    "orientation": "any",
+    "icons": []
+}

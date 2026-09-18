@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>Моя планета 3D — офлайн</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#4a90e2">
+    <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+    <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+    <style>
+        html, body, #map { width: 100%; height: 100vh; margin: 0; padding: 0; }
+        .controls {
+            position: absolute; top: 10px; left: 50px; z-index: 1000;
+            background: rgba(255,255,255,0.95); padding: 10px; border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            max-height: 90vh; overflow-y: auto;
+            font-family: system-ui, sans-serif; font-size: 13px;
+            max-width: 260px;
+        }
+        .controls button {
+            display: block; width: 100%; margin: 5px 0; padding: 8px;
+            cursor: pointer; border: 1px solid #ccc; border-radius: 3px;
+            background: #f8f8f8;
+        }
+        .controls button:hover { background: #e0e0e0; }
+        .controls button.active { background: #4a90e2; color: #fff; border-color: #357ab8; }
+        .controls button.danger { background: #e74c3c; color: #fff; border-color: #c0392b; }
+        .controls button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .controls b { display: block; margin: 10px 0 5px 0; }
+        .controls hr { margin: 10px 0; }
+        .controls input[type="number"] {
+            width: 100%; padding: 4px; margin: 2px 0; box-sizing: border-box;
+            border: 1px solid #ccc; border-radius: 3px; font-size: 12px;
+        }
+        .status {
+            position: absolute; bottom: 10px; left: 50px; z-index: 1000;
+            background: rgba(0,0,0,0.7); color: #fff; padding: 6px 10px;
+            border-radius: 4px; font-family: monospace; font-size: 11px;
+            pointer-events: none; white-space: pre;
+        }
+        .error-box {
+            position: absolute; top: 10px; right: 10px; z-index: 1000;
+            background: #c0392b; color: #fff; padding: 8px 12px;
+            border-radius: 4px; font-size: 12px; display: none;
+            max-width: 300px;
+        }
+        .geo-info {
+            position: absolute; bottom: 10px; right: 10px; z-index: 1000;
+            background: rgba(39,174,96,0.9); color: #fff; padding: 8px 12px;
+            border-radius: 4px; font-family: monospace; font-size: 11px;
+            display: none; max-width: 260px; line-height: 1.5;
+        }
+        .online-badge {
+            position: absolute; top: 10px; right: 10px; z-index: 999;
+            padding: 6px 10px; border-radius: 4px; font-size: 12px;
+            font-family: system-ui, sans-serif; font-weight: bold;
+            background: #27ae60; color: #fff;
+        }
+        .online-badge.offline { background: #c0392b; }
+        /* Панель скачивания */
+        .download-panel {
+            position: absolute; top: 10px; left: 320px; z-index: 1001;
+            background: rgba(255,255,255,0.97); padding: 12px; border-radius: 5px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+            font-family: system-ui, sans-serif; font-size: 13px;
+            width: 280px; display: none;
+        }
+        .download-panel h3 { margin: 0 0 8px 0; font-size: 15px; }
+        .download-panel label { display: block; margin: 6px 0 2px 0; font-size: 12px; color: #555; }
+        .download-panel .row { display: flex; gap: 6px; }
+        .download-panel .row input { flex: 1; }
+        .progress-bar {
+            width: 100%; height: 18px; background: #eee; border-radius: 3px;
+            overflow: hidden; margin: 8px 0;
+        }
+        .progress-bar > div {
+            height: 100%; background: #4a90e2; width: 0%;
+            transition: width 0.2s; text-align: center; color: #fff;
+            font-size: 11px; line-height: 18px;
+        }
+        .progress-stats {
+            font-family: monospace; font-size: 11px; color: #333;
+            background: #f4f4f4; padding: 6px; border-radius: 3px;
+            white-space: pre-line;
+        }
+        .saved-list { font-size: 11px; margin-top: 6px; max-height: 120px; overflow-y: auto; }
+        .saved-list .item {
+            padding: 4px 6px; background: #f0f8ff; border-radius: 3px;
+            margin: 3px 0; display: flex; justify-content: space-between;
+        }
+        .saved-list .item button {
+            width: auto; padding: 2px 6px; margin: 0; font-size: 11px;
+            background: #e74c3c; color: #fff; border: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div class="online-badge" id="onlineBadge">🌐 онлайн</div>
+
+    <div class="controls">
+        <b>Лететь к:</b>
+        <button onclick="flyTo(27.988, 86.925, 50000, 0)">🏔️ Эверест (сверху)</button>
+        <button onclick="flyTo(27.988, 86.925, 500, 60)">🏔️ Эверест (с земли)</button>
+        <button onclick="flyTo(43.349, 42.445, 50000, 0)">🏔️ Эльбрус (сверху)</button>
+        <button onclick="flyTo(43.349, 42.445, 500, 60)">🏔️ Эльбрус (с земли)</button>
+        <button onclick="flyTo(53.558, 108.165, 50000, 0)">🌊 Байкал (сверху)</button>
+        <button onclick="flyTo(53.558, 108.165, 500, 60)">🌊 Байкал (с земли)</button>
+
+        <hr>
+        <b>📍 Моё местоположение:</b>
+        <button onclick="locateMe()">🎯 Найти меня</button>
+        <button onclick="followMe(this)" id="followBtn">👣 Следить: выкл</button>
+        <button onclick="flyToMe()">✈️ Лететь ко мне</button>
+
+        <hr>
+        <b>Угол обзора:</b>
+        <button onclick="setPitch(0)">⬇️ Сверху (0°)</button>
+        <button onclick="setPitch(30)">↘️ Наклон (30°)</button>
+        <button onclick="setPitch(45)">📐 Полу-3D (45°)</button>
+        <button onclick="setPitch(60)">🏙️ 3D-город (60°)</button>
+        <button onclick="setPitch(85)">🚀 Горизонт (85°)</button>
+        <button onclick="cyclePitch()">🔄 Переключить угол</button>
+
+        <hr>
+        <b>Рельеф:</b>
+        <button onclick="toggleTerrain(this)" id="terrainBtn" class="active">⛰️ 3D-рельеф: вкл</button>
+
+        <hr>
+        <b>📥 Офлайн-карта:</b>
+        <button onclick="openDownloadPanel()">📥 Скачать регион</button>
+        <button onclick="showSavedList()">📋 Мои регионы</button>
+        <button onclick="clearAllCache()" class="danger">🧹 Очистить весь кеш</button>
+
+        <hr>
+        <button onclick="resetView()">↩️ Сбросить вид</button>
+    </div>
+
+    <!-- Панель скачивания -->
+    <div class="download-panel" id="downloadPanel">
+        <h3>📥 Скачать регион</h3>
+
+        <label>Способ:</label>
+        <button onclick="startBoxSelection()" id="boxSelectBtn">▭ Выбрать рамкой на карте</button>
+
+        <label>Или координаты (lat/lon):</label>
+        <div class="row">
+            <input type="number" id="latMin" placeholder="lat min" step="0.0001">
+            <input type="number" id="latMax" placeholder="lat max" step="0.0001">
+        </div>
+        <div class="row">
+            <input type="number" id="lonMin" placeholder="lon min" step="0.0001">
+            <input type="number" id="lonMax" placeholder="lon max" step="0.0001">
+        </div>
+
+        <label>Зумы:</label>
+        <div class="row">
+            <input type="number" id="zoomMin" value="10" min="0" max="18">
+            <input type="number" id="zoomMax" value="15" min="0" max="18">
+        </div>
+
+        <label>Что качать:</label>
+        <div class="row" style="font-size:12px;">
+            <label style="flex:1;"><input type="checkbox" id="dlMap" checked> Карта</label>
+            <label style="flex:1;"><input type="checkbox" id="dlDem" checked> Рельеф</label>
+        </div>
+
+        <div class="progress-bar"><div id="progressFill">0%</div></div>
+        <div class="progress-stats" id="progressStats">Готов к старту</div>
+
+        <div class="row" style="margin-top:8px;">
+            <button onclick="startDownload()" id="startDlBtn" style="flex:1;">▶️ Старт</button>
+            <button onclick="stopDownload()" id="stopDlBtn" style="flex:1;" disabled>⏹ Стоп</button>
+        </div>
+        <button onclick="closeDownloadPanel()" style="margin-top:4px;">✖️ Закрыть</button>
+    </div>
+
+    <div class="status" id="status">—</div>
+    <div class="error-box" id="errorBox"></div>
+    <div class="geo-info" id="geoInfo">—</div>
+
+    <script>
+        // ============================================================
+        // Service Worker
+        // ============================================================
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js')
+                .then(reg => console.log('SW registered:', reg.scope))
+                .catch(err => console.error('SW registration failed:', err));
+        }
+
+        // ============================================================
+        // Карта
+        // ============================================================
+        const TILE_URL_MAP = 'https://tile.opentopomap.org/{z}/{x}/{y}.png';
+        const TILE_URL_DEM = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
+
+        const map = new maplibregl.Map({
+            container: 'map',
+            style: {
+                version: 8,
+                sources: {
+                    topo: {
+                        type: 'raster',
+                        tiles: [TILE_URL_MAP],
+                        tileSize: 256,
+                        attribution: '© OpenTopoMap'
+                    }
+                },
+                layers: [{ id: 'topo', type: 'raster', source: 'topo' }]
+            },
+            center: [37.6, 55.7],
+            zoom: 5,
+            pitch: 0,
+            bearing: 0,
+            maxPitch: 85
+        });
+
+        map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }));
+        map.addControl(new maplibregl.ScaleControl());
+
+        // ============================================================
+        // Онлайн/офлайн индикатор
+        // ============================================================
+        const onlineBadge = document.getElementById('onlineBadge');
+        function updateOnlineBadge() {
+            if (navigator.onLine) {
+                onlineBadge.textContent = '🌐 онлайн';
+                onlineBadge.classList.remove('offline');
+            } else {
+                onlineBadge.textContent = '✈️ офлайн';
+                onlineBadge.classList.add('offline');
+            }
+        }
+        window.addEventListener('online', updateOnlineBadge);
+        window.addEventListener('offline', updateOnlineBadge);
+        updateOnlineBadge();
+
+        // ============================================================
+        // Обработка ошибок
+        // ============================================================
+        const errorBox = document.getElementById('errorBox');
+        let errorTimer = null;
+        function showError(msg) {
+            errorBox.textContent = msg;
+            errorBox.style.display = 'block';
+            clearTimeout(errorTimer);
+            errorTimer = setTimeout(() => { errorBox.style.display = 'none'; }, 6000);
+        }
+        map.on('error', (e) => {
+            console.error('MapLibre error:', e);
+            const msg = e?.error?.message || 'Ошибка загрузки тайлов';
+            // не спамим одинаковыми ошибками про офлайн-тайлы
+            if (msg.includes('Failed to fetch') && !navigator.onLine) return;
+            showError(msg);
+        });
+
+        // ============================================================
+        // Статус карты
+        // ============================================================
+        const statusEl = document.getElementById('status');
+        function updateStatus() {
+            const c = map.getCenter();
+            const z = map.getZoom().toFixed(2);
+            const p = map.getPitch().toFixed(0);
+            const b = map.getBearing().toFixed(0);
+            statusEl.textContent =
+                `map   lat: ${c.lat.toFixed(4)}  lon: ${c.lng.toFixed(4)}  zoom: ${z}  pitch: ${p}°  bearing: ${b}°`;
+            highlightPitchButton(map.getPitch());
+        }
+        map.on('move', updateStatus);
+        map.on('zoom', updateStatus);
+        updateStatus();
+
+        // ============================================================
+        // 3D-рельеф
+        // ============================================================
+        const TERRAIN_EXAGGERATION = 1;
+        let terrainEnabled = true;
+        let terrainReady = false;
+
+        map.on('load', () => {
+            map.addSource('terrain', {
+                type: 'raster-dem',
+                tiles: [TILE_URL_DEM],
+                encoding: 'terrarium',
+                tileSize: 256,
+                maxzoom: 15
+            });
+            if (terrainEnabled) {
+                map.setTerrain({ source: 'terrain', exaggeration: TERRAIN_EXAGGERATION });
+            }
+            if (map.setSky) {
+                map.setSky({
+                    'sky-color': '#87CEEB',
+                    'horizon-color': '#ffffff',
+                    'fog-color': '#ffffff',
+                    'fog-ground-blend': 0.5
+                });
+            }
+            if (map.setLight) {
+                map.setLight({ anchor: 'viewport', color: '#ffffff', intensity: 0.4 });
+            }
+            terrainReady = true;
+        });
+
+        function toggleTerrain(btn) {
+            terrainEnabled = !terrainEnabled;
+            if (terrainReady && map.getSource('terrain')) {
+                if (terrainEnabled) {
+                    map.setTerrain({ source: 'terrain', exaggeration: TERRAIN_EXAGGERATION });
+                    btn.textContent = '⛰️ 3D-рельеф: вкл';
+                    btn.classList.add('active');
+                } else {
+                    map.setTerrain(null);
+                    btn.textContent = '⛰️ 3D-рельеф: выкл';
+                    btn.classList.remove('active');
+                }
+            }
+        }
+
+        // ============================================================
+        // Полёт к точке
+        // ============================================================
+        function flyTo(lat, lon, alt, pitch) {
+            map.flyTo({
+                center: [lon, lat],
+                zoom: getZoomForAltitude(alt),
+                pitch, duration: 3000, essential: true
+            });
+        }
+        function getZoomForAltitude(alt) {
+            if (alt >= 50000) return 5;
+            if (alt >= 30000) return 7;
+            if (alt >= 20000) return 9;
+            if (alt >= 15000) return 10;
+            if (alt >= 10000) return 12;
+            if (alt >= 5000) return 13;
+            if (alt >= 1000) return 15;
+            if (alt >= 500) return 16;
+            return 17;
+        }
+
+        // ============================================================
+        // Угол обзора
+        // ============================================================
+        const PITCH_PRESETS = [0, 30, 45, 60, 85];
+        let pitchIndex = 0;
+        function setPitch(deg) {
+            map.easeTo({ pitch: deg, duration: 800, essential: true });
+            pitchIndex = PITCH_PRESETS.indexOf(deg);
+            if (pitchIndex === -1) {
+                pitchIndex = PITCH_PRESETS.reduce((best, val, i) =>
+                    Math.abs(val - deg) < Math.abs(PITCH_PRESETS[best] - deg) ? i : best, 0);
+            }
+        }
+        function cyclePitch() {
+            pitchIndex = (pitchIndex + 1) % PITCH_PRESETS.length;
+            map.easeTo({ pitch: PITCH_PRESETS[pitchIndex], duration: 800, essential: true });
+        }
+        function highlightPitchButton(currentPitch) {
+            document.querySelectorAll('.controls button').forEach(btn => {
+                const m = btn.textContent.match(/\((\d+)°\)/);
+                if (m) {
+                    if (Math.abs(parseInt(m[1]) - currentPitch) < 1) btn.classList.add('active');
+                    else btn.classList.remove('active');
+                }
+            });
+        }
+
+        // ============================================================
+        // Геолокация
+        // ============================================================
+        const geoInfo = document.getElementById('geoInfo');
+        let myPosition = null;
+        let followEnabled = false;
+        let watchId = null;
+
+        const el = document.createElement('div');
+        el.style.cssText = `
+            width: 18px; height: 18px; border-radius: 50%;
+            background: #2ecc71; border: 3px solid #fff;
+            box-shadow: 0 0 0 2px #2ecc71, 0 0 12px rgba(46,204,113,0.9);
+        `;
+        const marker = new maplibregl.Marker({ element: el });
+
+        function updateAccuracyCircle(lat, lon, accuracyMeters) {
+            const points = 64;
+            const km = accuracyMeters / 1000;
+            const coords = [];
+            const distanceX = km / (111.320 * Math.cos(lat * Math.PI / 180));
+            const distanceY = km / 110.574;
+            for (let i = 0; i < points; i++) {
+                const theta = (i / points) * (2 * Math.PI);
+                coords.push([lon + distanceX * Math.cos(theta), lat + distanceY * Math.sin(theta)]);
+            }
+            coords.push(coords[0]);
+            const geojson = { type: 'Feature', geometry: { type: 'Polygon', coordinates: [coords] } };
+            const src = map.getSource('accuracy');
+            if (src) src.setData(geojson);
+            else {
+                map.addSource('accuracy', { type: 'geojson', data: geojson });
+                map.addLayer({
+                    id: 'accuracy-fill', type: 'fill', source: 'accuracy',
+                    paint: { 'fill-color': '#2ecc71', 'fill-opacity': 0.15 }
+                });
+                map.addLayer({
+                    id: 'accuracy-line', type: 'line', source: 'accuracy',
+                    paint: { 'line-color': '#2ecc71', 'line-width': 1, 'line-opacity': 0.6 }
+                });
+            }
+        }
+
+        function showGeoInfo(pos) {
+            const c = pos.coords;
+            const heading = c.heading != null ? `${c.heading.toFixed(0)}°` : '—';
+            const speed = c.speed != null ? `${(c.speed * 3.6).toFixed(1)} км/ч` : '—';
+            geoInfo.style.display = 'block';
+            geoInfo.textContent =
+                `📍 Широта: ${c.latitude.toFixed(6)}\n` +
+                `   Долгота: ${c.longitude.toFixed(6)}\n` +
+                `   Точность: ±${c.accuracy.toFixed(0)} м\n` +
+                `   Курс: ${heading}   Скорость: ${speed}`;
+        }
+
+        function handlePosition(pos) {
+            const { latitude, longitude, accuracy } = pos.coords;
+            myPosition = { lat: latitude, lon: longitude, accuracy,
+                heading: pos.coords.heading, speed: pos.coords.speed };
+            marker.setLngLat([longitude, latitude]).addTo(map);
+            updateAccuracyCircle(latitude, longitude, accuracy);
+            showGeoInfo(pos);
+            if (followEnabled) {
+                map.easeTo({ center: [longitude, latitude], duration: 800, essential: true });
+            }
+        }
+
+        function handleGeoError(err) {
+            console.warn('Geolocation error:', err);
+            let msg = 'Не удалось получить местоположение';
+            if (err.code === 1) msg = 'Доступ к геолокации запрещён';
+            else if (err.code === 2) msg = 'Позиция недоступна';
+            else if (err.code === 3) msg = 'Таймаут получения позиции';
+            showError(msg);
+        }
+
+        function locateMe() {
+            if (!navigator.geolocation) { handleGeoError({ code: 2 }); return; }
+            navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                    handlePosition(pos);
+                    map.flyTo({ center: [pos.coords.longitude, pos.coords.latitude],
+                        zoom: 15, pitch: 45, duration: 2000, essential: true });
+                    if (watchId == null) {
+                        watchId = navigator.geolocation.watchPosition(
+                            handlePosition, handleGeoError,
+                            { enableHighAccuracy: true, maximumAge: 2000, timeout: 15000 });
+                    }
+                },
+                handleGeoError,
+                { enableHighAccuracy: true, timeout: 15000 }
+            );
+        }
+
+        function flyToMe() {
+            if (!myPosition) { locateMe(); return; }
+            map.flyTo({ center: [myPosition.lon, myPosition.lat],
+                zoom: 15, pitch: 45, duration: 2000, essential: true });
+        }
+
+        function followMe(btn) {
+            followEnabled = !followEnabled;
+            btn.textContent = followEnabled ? '👣 Следить: вкл' : '👣 Следить: выкл';
+            btn.classList.toggle('active', followEnabled);
+            if (followEnabled) {
+                if (myPosition) {
+                    map.easeTo({ center: [myPosition.lon, myPosition.lat],
+                        zoom: Math.max(map.getZoom(), 15), duration: 1000, essential: true });
+                } else locateMe();
+                if (watchId == null) {
+                    watchId = navigator.geolocation.watchPosition(
+                        handlePosition, handleGeoError,
+                        { enableHighAccuracy: true, maximumAge: 2000, timeout: 15000 });
+                }
+            } else {
+                if (watchId != null) {
+                    navigator.geolocation.clearWatch(watchId);
+                    watchId = null;
+                }
+            }
+        }
+
+        // ============================================================
+        // Сброс вида
+        // ============================================================
+        function resetView() {
+            pitchIndex = 0;
+            followEnabled = false;
+            const btn = document.getElementById('followBtn');
+            if (btn) { btn.textContent = '👣 Следить: выкл'; btn.classList.remove('active'); }
+            if (watchId != null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+            map.flyTo({ center: [37.6, 55.7], zoom: 5, pitch: 0, bearing: 0,
+                duration: 1500, essential: true });
+        }
+
+        // ============================================================
+        // ============ СКАЧИВАНИЕ РЕГИОНА В КЕШ ======================
+        // ============================================================
+
+        const downloadPanel = document.getElementById('downloadPanel');
+        const progressFill = document.getElementById('progressFill');
+        const progressStats = document.getElementById('progressStats');
+        const startDlBtn = document.getElementById('startDlBtn');
+        const stopDlBtn = document.getElementById('stopDlBtn');
+        const boxSelectBtn = document.getElementById('boxSelectBtn');
+
+        let downloadAbort = false;
+        let downloading = false;
+        let boxSelectionActive = false;
+        let boxSelectionStart = null;
+
+        function openDownloadPanel() {
+            downloadPanel.style.display = 'block';
+            // подставим текущие границы карты как стартовое значение
+            const b = map.getBounds();
+            document.getElementById('latMin').value = b.getSouth().toFixed(4);
+            document.getElementById('latMax').value = b.getNorth().toFixed(4);
+            document.getElementById('lonMin').value = b.getWest().toFixed(4);
+            document.getElementById('lonMax').value = b.getEast().toFixed(4);
+        }
+        function closeDownloadPanel() {
+            downloadPanel.style.display = 'none';
+            if (boxSelectionActive) cancelBoxSelection();
+        }
+
+        // ---------- Выбор рамкой на карте ----------
+        function startBoxSelection() {
+            if (boxSelectionActive) { cancelBoxSelection(); return; }
+            boxSelectionActive = true;
+            boxSelectionStart = null;
+            boxSelectBtn.textContent = '▭ Тащите по карте… (отмена)';
+            boxSelectBtn.classList.add('active');
+            map.getCanvas().style.cursor = 'crosshair';
+            // блокируем перетаскивание карты, чтобы не мешало
+            map.dragPan.disable();
+
+            map.on('mousedown', onBoxDown);
+            map.on('mouseup', onBoxUp);
+            map.on('touchstart', onBoxDown);
+            map.on('touchend', onBoxUp);
+        }
+
+        function onBoxDown(e) {
+            if (!boxSelectionActive) return;
+            boxSelectionStart = { x: e.point.x, y: e.point.y };
+            showBoxPreview(e.point.x, e.point.y, e.point.x, e.point.y);
+        }
+        function onBoxMove(e) {
+            if (!boxSelectionActive || !boxSelectionStart) return;
+            showBoxPreview(boxSelectionStart.x, boxSelectionStart.y, e.point.x, e.point.y);
+        }
+        function onBoxUp(e) {
+            if (!boxSelectionActive || !boxSelectionStart) return;
+            const p1 = map.unproject([boxSelectionStart.x, boxSelectionStart.y]);
+            const p2 = map.unproject([e.point.x, e.point.y]);
+            const latMin = Math.min(p1.lat, p2.lat);
+            const latMax = Math.max(p1.lat, p2.lat);
+            const lonMin = Math.min(p1.lng, p2.lng);
+            const lonMax = Math.max(p1.lng, p2.lng);
+            document.getElementById('latMin').value = latMin.toFixed(4);
+            document.getElementById('latMax').value = latMax.toFixed(4);
+            document.getElementById('lonMin').value = lonMin.toFixed(4);
+            document.getElementById('lonMax').value = lonMax.toFixed(4);
+            cancelBoxSelection();
+        }
+
+        function showBoxPreview(x1, y1, x2, y2) {
+            const p1 = map.unproject([x1, y1]);
+            const p2 = map.unproject([x2, y2]);
+            const coords = [
+                [p1.lng, p1.lat], [p2.lng, p1.lat],
+                [p2.lng, p2.lat], [p1.lng, p2.lat], [p1.lng, p1.lat]
+            ];
+            const geojson = { type: 'Feature', geometry: { type: 'Polygon', coordinates: [coords] } };
+            const src = map.getSource('box-preview');
+            if (src) src.setData(geojson);
+            else {
+                map.addSource('box-preview', { type: 'geojson', data: geojson });
+                map.addLayer({
+                    id: 'box-preview-fill', type: 'fill', source: 'box-preview',
+                    paint: { 'fill-color': '#4a90e2', 'fill-opacity': 0.2 }
+                });
+                map.addLayer({
+                    id: 'box-preview-line', type: 'line', source: 'box-preview',
+                    paint: { 'line-color': '#4a90e2', 'line-width': 2, 'line-dasharray': [2, 1] }
+                });
+            }
+        }
+
+        function cancelBoxSelection() {
+            boxSelectionActive = false;
+            boxSelectionStart = null;
+            boxSelectBtn.textContent = '▭ Выбрать рамкой на карте';
+            boxSelectBtn.classList.remove('active');
+            map.getCanvas().style.cursor = '';
+            map.dragPan.enable();
+            map.off('mousedown', onBoxDown);
+            map.off('mouseup', onBoxUp);
+            map.off('mousemove', onBoxMove);
+            map.off('touchstart', onBoxDown);
+            map.off('touchend', onBoxUp);
+            if (map.getLayer('box-preview-fill')) map.removeLayer('box-preview-fill');
+            if (map.getLayer('box-preview-line')) map.removeLayer('box-preview-line');
+            if (map.getSource('box-preview')) map.removeSource('box-preview');
+        }
+
+        // отслеживание перемещения мыши при выборе
+        map.on('mousemove', (e) => { if (boxSelectionActive) onBoxMove(e); });
+        map.on('touchmove', (e) => {
+            if (boxSelectionActive && e.point) onBoxMove(e);
+        });
+
+        // ---------- Вспомогательные: перевод lat/lon → tile x/y ----------
+        function lon2tile(lon, z) { return Math.floor((lon + 180) / 360 * Math.pow(2, z)); }
+        function lat2tile(lat, z) {
+            const rad = lat * Math.PI / 180;
+            return Math.floor((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2 * Math.pow(2, z));
+        }
+        function tileUrl(urlTemplate, z, x, y) {
+            return urlTemplate.replace('{z}', z).replace('{x}', x).replace('{y}', y);
+        }
+
+        // ---------- Подсчёт тайлов ----------
+        function countTiles(latMin, latMax, lonMin, lonMax, zMin, zMax, includeMap, includeDem) {
+            let total = 0;
+            const perZoom = [];
+            for (let z = zMin; z <= zMax; z++) {
+                const xMin = lon2tile(lonMin, z);
+                const xMax = lon2tile(lonMax, z);
+                const yMin = lat2tile(latMax, z); // в тайлах Y растёт вниз, поэтому max lat = min y
+                const yMax = lat2tile(latMin, z);
+                const n = (xMax - xMin + 1) * (yMax - yMin + 1);
+                let cnt = 0;
+                if (includeMap) cnt += n;
+                if (includeDem) cnt += n;
+                perZoom.push({ z, n, cnt });
+                total += cnt;
+            }
+            return { total, perZoom };
+        }
+
+        // ---------- Основная функция скачивания ----------
+        async function startDownload() {
+            if (downloading) return;
+
+            const latMin = parseFloat(document.getElementById('latMin').value);
+            const latMax = parseFloat(document.getElementById('latMax').value);
+            const lonMin = parseFloat(document.getElementById('lonMin').value);
+            const lonMax = parseFloat(document.getElementById('lonMax').value);
+            const zMin = parseInt(document.getElementById('zoomMin').value);
+            const zMax = parseInt(document.getElementById('zoomMax').value);
+            const includeMap = document.getElementById('dlMap').checked;
+            const includeDem = document.getElementById('dlDem').checked;
+
+            if ([latMin, latMax, lonMin, lonMax].some(v => isNaN(v))) {
+                showError('Заполните координаты или выберите рамкой');
+                return;
+            }
+            if (zMin > zMax || zMin < 0 || zMax > 18) {
+                showError('Некорректный диапазон зумов');
+                return;
+            }
+            if (!includeMap && !includeDem) {
+                showError('Выберите, что качать');
+                return;
+            }
+
+            const { total, perZoom } = countTiles(latMin, latMax, lonMin, lonMax, zMin, zMax, includeMap, includeDem);
+            if (total === 0) { showError('Нечего качать'); return; }
+
+            // Оценка объёма
+            const avgTileSize = 30 * 1024; // 30 КБ
+            const estBytes = total * avgTileSize;
+            const estStr = (estBytes / 1024 / 1024).toFixed(0) + ' МБ';
+
+            const ok = confirm(
+                `Скачать ${total} тайлов?\n\n` +
+                `Регион: lat ${latMin}…${latMax}, lon ${lonMin}…${lonMax}\n` +
+                `Зумы: ${zMin}–${zMax}\n` +
+                `Оценка объёма: ~${estStr}\n\n` +
+                `Это может занять от нескольких минут до часа.`
+            );
+            if (!ok) return;
+
+            downloading = true;
+            downloadAbort = false;
+            startDlBtn.disabled = true;
+            stopDlBtn.disabled = false;
+
+            const stats = {
+                total, done: 0, failed: 0, bytes: 0,
+                startTime: Date.now()
+            };
+
+            function updateProgress() {
+                const pct = (stats.done / stats.total * 100).toFixed(1);
+                progressFill.style.width = pct + '%';
+                progressFill.textContent = pct + '%';
+                const elapsed = (Date.now() - stats.startTime) / 1000;
+                const speed = stats.done / elapsed;
+                const eta = speed > 0 ? (stats.total - stats.done) / speed : 0;
+                const mb = (stats.bytes / 1024 / 1024).toFixed(1);
+                progressStats.textContent =
+                    `Готово: ${stats.done} / ${stats.total}\n` +
+                    `Ошибок: ${stats.failed}\n` +
+                    `Скачано: ${mb} МБ\n` +
+                    `Скорость: ${speed.toFixed(1)} тайл/с\n` +
+                    `Осталось: ~${Math.ceil(eta)} с`;
+            }
+
+            // Качаем последовательно с небольшим параллелизмом (3 потока)
+            const PARALLEL = 3;
+            const jobs = [];
+            for (let z = zMin; z <= zMax; z++) {
+                const xMin = lon2tile(lonMin, z);
+                const xMax = lon2tile(lonMax, z);
+                const yMin = lat2tile(latMax, z);
+                const yMax = lat2tile(latMin, z);
+                for (let x = xMin; x <= xMax; x++) {
+                    for (let y = yMin; y <= yMax; y++) {
+                        if (includeMap) jobs.push({ url: tileUrl(TILE_URL_MAP, z, x, y), type: 'map' });
+                        if (includeDem) jobs.push({ url: tileUrl(TILE_URL_DEM, z, x, y), type: 'dem' });
+                    }
+                }
+            }
+
+            let idx = 0;
+            async function worker() {
+                while (idx < jobs.length && !downloadAbort) {
+                    const job = jobs[idx++];
+                    try {
+                        const res = await fetch(job.url, { mode: 'cors', cache: 'force-cache' });
+                        if (res.ok) {
+                            const blob = await res.blob();
+                            stats.bytes += blob.size;
+                        } else {
+                            stats.failed++;
+                        }
+                    } catch (e) {
+                        stats.failed++;
+                    }
+                    stats.done++;
+                    if (stats.done % 10 === 0) updateProgress();
+                }
+            }
+
+            updateProgress();
+            const workers = [];
+            for (let i = 0; i < PARALLEL; i++) workers.push(worker());
+            await Promise.all(workers);
+            updateProgress();
+
+            // Сохраняем информацию о регионе
+            if (!downloadAbort) {
+                saveRegionInfo({
+                    latMin, latMax, lonMin, lonMax, zMin, zMax,
+                    tiles: stats.done, bytes: stats.bytes,
+                    date: new Date().toISOString()
+                });
+                progressStats.textContent += '\n\n✅ Готово!';
+            } else {
+                progressStats.textContent += '\n\n⏹ Остановлено';
+            }
+
+            downloading = false;
+            startDlBtn.disabled = false;
+            stopDlBtn.disabled = true;
+        }
+
+        function stopDownload() {
+            downloadAbort = true;
+        }
+
+        // ---------- Метаданные регионов в localStorage ----------
+        function saveRegionInfo(info) {
+            const key = 'saved_regions';
+            const list = JSON.parse(localStorage.getItem(key) || '[]');
+            list.push(info);
+            localStorage.setItem(key, JSON.stringify(list));
+        }
+        function getSavedRegions() {
+            return JSON.parse(localStorage.getItem('saved_regions') || '[]');
+        }
+        function deleteRegionInfo(idx) {
+            const list = getSavedRegions();
+            list.splice(idx, 1);
+            localStorage.setItem('saved_regions', JSON.stringify(list));
+            showSavedList();
+        }
+
+        function showSavedList() {
+            const list = getSavedRegions();
+            if (list.length === 0) {
+                alert('Пока нет сохранённых регионов');
+                return;
+            }
+            let msg = 'Сохранённые регионы:\n\n';
+            list.forEach((r, i) => {
+                msg += `${i + 1}. lat ${r.latMin.toFixed(2)}…${r.latMax.toFixed(2)}, ` +
+                       `lon ${r.lonMin.toFixed(2)}…${r.lonMax.toFixed(2)}\n` +
+                       `   зумы ${r.zMin}–${r.zMax}, ${r.tiles} тайлов, ` +
+                       `${(r.bytes / 1024 / 1024).toFixed(0)} МБ\n` +
+                       `   ${new Date(r.date).toLocaleString()}\n\n`;
+            });
+            msg += '\nОчистить весь кеш: кнопка «🧹 Очистить весь кеш».';
+            alert(msg);
+        }
+
+        // ---------- Очистка кеша ----------
+        async function clearAllCache() {
+            if (!confirm('Очистить ВЕСЬ офлайн-кеш тайлов? Это удалит все скачанные регионы.')) return;
+            try {
+                const keys = await caches.keys();
+                for (const k of keys) await caches.delete(k);
+                localStorage.removeItem('saved_regions');
+                alert('Кеш очищен. Тайлы будут загружаться из сети.');
+            } catch (e) {
+                showError('Ошибка очистки: ' + e.message);
+            }
+        }
+    </script>
+</body>
+</html>

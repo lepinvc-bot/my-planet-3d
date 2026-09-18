@@ -2,113 +2,208 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
     <title>Моя планета 3D — офлайн</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#4a90e2">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
     <style>
-        html, body, #map { width: 100%; height: 100vh; margin: 0; padding: 0; }
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; }
+        #map { position: absolute; inset: 0; }
+
+        /* ---------- Кнопка-гамбургер ---------- */
+        .menu-toggle {
+            position: absolute; top: calc(10px + env(safe-area-inset-top)); left: 10px;
+            z-index: 2000;
+            width: 48px; height: 48px; border-radius: 50%;
+            background: rgba(255,255,255,0.97); border: none;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+            font-size: 22px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: transform 0.2s;
+        }
+        .menu-toggle:active { transform: scale(0.92); }
+
+        /* ---------- Панель управления ---------- */
         .controls {
-            position: absolute; top: 10px; left: 50px; z-index: 1000;
-            background: rgba(255,255,255,0.95); padding: 10px; border-radius: 5px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
-            max-height: 90vh; overflow-y: auto;
-            font-family: system-ui, sans-serif; font-size: 13px;
-            max-width: 260px;
+            position: absolute; top: 0; left: 0; bottom: 0;
+            z-index: 1500;
+            width: 300px; max-width: 88vw;
+            background: rgba(255,255,255,0.98);
+            box-shadow: 2px 0 12px rgba(0,0,0,0.15);
+            padding: 14px;
+            padding-top: calc(14px + env(safe-area-inset-top));
+            padding-bottom: calc(14px + env(safe-area-inset-bottom));
+            overflow-y: auto;
+            font-family: system-ui, -apple-system, sans-serif;
+            font-size: 14px;
+            transform: translateX(-105%);
+            transition: transform 0.28s ease;
+            -webkit-overflow-scrolling: touch;
         }
+        .controls.open { transform: translateX(0); }
+
+        .controls b { display: block; margin: 14px 0 6px 0; font-size: 13px; color: #444; }
+        .controls b:first-child { margin-top: 4px; }
+        .controls hr { margin: 14px 0; border: none; border-top: 1px solid #eee; }
+
         .controls button {
-            display: block; width: 100%; margin: 5px 0; padding: 8px;
-            cursor: pointer; border: 1px solid #ccc; border-radius: 3px;
-            background: #f8f8f8;
+            display: flex; align-items: center; gap: 8px;
+            width: 100%; margin: 6px 0; padding: 12px 14px;
+            cursor: pointer; border: 1px solid #ddd; border-radius: 10px;
+            background: #f8f8f8; font-size: 14px;
+            font-family: inherit; text-align: left;
+            transition: background 0.15s;
+            min-height: 46px;
         }
-        .controls button:hover { background: #e0e0e0; }
+        .controls button:hover { background: #ececec; }
+        .controls button:active { background: #e0e0e0; }
         .controls button.active { background: #4a90e2; color: #fff; border-color: #357ab8; }
         .controls button.danger { background: #e74c3c; color: #fff; border-color: #c0392b; }
         .controls button:disabled { opacity: 0.5; cursor: not-allowed; }
-        .controls b { display: block; margin: 10px 0 5px 0; }
-        .controls hr { margin: 10px 0; }
+
         .controls input[type="number"] {
-            width: 100%; padding: 4px; margin: 2px 0; box-sizing: border-box;
-            border: 1px solid #ccc; border-radius: 3px; font-size: 12px;
+            width: 100%; padding: 10px 12px; margin: 4px 0;
+            border: 1px solid #ccc; border-radius: 8px; font-size: 14px;
+            font-family: inherit;
         }
-        .status {
-            position: absolute; bottom: 10px; left: 50px; z-index: 1000;
-            background: rgba(0,0,0,0.7); color: #fff; padding: 6px 10px;
-            border-radius: 4px; font-family: monospace; font-size: 11px;
-            pointer-events: none; white-space: pre;
-        }
-        .error-box {
-            position: absolute; top: 10px; right: 10px; z-index: 1000;
-            background: #c0392b; color: #fff; padding: 8px 12px;
-            border-radius: 4px; font-size: 12px; display: none;
-            max-width: 300px;
-        }
-        .geo-info {
-            position: absolute; bottom: 10px; right: 10px; z-index: 1000;
-            background: rgba(39,174,96,0.9); color: #fff; padding: 8px 12px;
-            border-radius: 4px; font-family: monospace; font-size: 11px;
-            display: none; max-width: 260px; line-height: 1.5;
-        }
-        .online-badge {
-            position: absolute; top: 10px; right: 10px; z-index: 999;
-            padding: 6px 10px; border-radius: 4px; font-size: 12px;
-            font-family: system-ui, sans-serif; font-weight: bold;
-            background: #27ae60; color: #fff;
-        }
-        .online-badge.offline { background: #c0392b; }
-        /* Панель скачивания */
+        .controls label { font-size: 12px; color: #666; }
+
+        /* Панель скачивания внутри .controls */
         .download-panel {
-            position: absolute; top: 10px; left: 320px; z-index: 1001;
-            background: rgba(255,255,255,0.97); padding: 12px; border-radius: 5px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.4);
-            font-family: system-ui, sans-serif; font-size: 13px;
-            width: 280px; display: none;
+            display: none;
+            background: #f0f8ff; border-radius: 10px; padding: 10px;
+            margin: 8px 0;
         }
-        .download-panel h3 { margin: 0 0 8px 0; font-size: 15px; }
-        .download-panel label { display: block; margin: 6px 0 2px 0; font-size: 12px; color: #555; }
+        .download-panel.open { display: block; }
+        .download-panel h3 { margin: 0 0 8px 0; font-size: 14px; }
+        .download-panel label { display: block; margin: 8px 0 2px 0; font-size: 12px; color: #555; }
         .download-panel .row { display: flex; gap: 6px; }
         .download-panel .row input { flex: 1; }
+
         .progress-bar {
-            width: 100%; height: 18px; background: #eee; border-radius: 3px;
-            overflow: hidden; margin: 8px 0;
+            width: 100%; height: 20px; background: #e0e0e0; border-radius: 10px;
+            overflow: hidden; margin: 10px 0;
         }
         .progress-bar > div {
-            height: 100%; background: #4a90e2; width: 0%;
-            transition: width 0.2s; text-align: center; color: #fff;
-            font-size: 11px; line-height: 18px;
+            height: 100%; background: linear-gradient(90deg, #4a90e2, #357ab8);
+            width: 0%; transition: width 0.25s;
+            text-align: center; color: #fff; font-size: 11px;
+            line-height: 20px; font-weight: bold;
         }
         .progress-stats {
-            font-family: monospace; font-size: 11px; color: #333;
-            background: #f4f4f4; padding: 6px; border-radius: 3px;
-            white-space: pre-line;
+            font-family: ui-monospace, monospace; font-size: 11px; color: #333;
+            background: #fff; padding: 8px; border-radius: 8px;
+            white-space: pre-line; line-height: 1.5;
         }
-        .saved-list { font-size: 11px; margin-top: 6px; max-height: 120px; overflow-y: auto; }
-        .saved-list .item {
-            padding: 4px 6px; background: #f0f8ff; border-radius: 3px;
-            margin: 3px 0; display: flex; justify-content: space-between;
+
+        /* ---------- Индикатор онлайна ---------- */
+        .online-badge {
+            position: absolute; top: calc(10px + env(safe-area-inset-top)); right: 10px;
+            z-index: 1500;
+            padding: 8px 12px; border-radius: 20px; font-size: 12px;
+            font-family: system-ui, sans-serif; font-weight: bold;
+            background: #27ae60; color: #fff;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+            pointer-events: none;
         }
-        .saved-list .item button {
-            width: auto; padding: 2px 6px; margin: 0; font-size: 11px;
-            background: #e74c3c; color: #fff; border: none;
+        .online-badge.offline { background: #c0392b; }
+
+        /* ---------- Статус-бар (низ слева) ---------- */
+        .status {
+            position: absolute; bottom: calc(10px + env(safe-area-inset-bottom)); left: 10px;
+            z-index: 1000;
+            background: rgba(0,0,0,0.7); color: #fff;
+            padding: 6px 10px; border-radius: 8px;
+            font-family: ui-monospace, monospace; font-size: 10px;
+            pointer-events: none; white-space: pre;
+            max-width: calc(100vw - 20px); overflow: hidden;
+        }
+
+        /* ---------- Гео-инфо (низ справа) ---------- */
+        .geo-info {
+            position: absolute; bottom: calc(10px + env(safe-area-inset-bottom)); right: 10px;
+            z-index: 1000;
+            background: rgba(39,174,96,0.95); color: #fff;
+            padding: 8px 12px; border-radius: 8px;
+            font-family: ui-monospace, monospace; font-size: 10px;
+            display: none; max-width: 240px; line-height: 1.5;
+            pointer-events: none;
+        }
+
+        /* ---------- Ошибки ---------- */
+        .error-box {
+            position: absolute;
+            top: calc(70px + env(safe-area-inset-top)); right: 10px;
+            z-index: 2000;
+            background: #c0392b; color: #fff;
+            padding: 10px 14px; border-radius: 8px;
+            font-size: 13px; display: none;
+            max-width: calc(100vw - 20px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+
+        /* ---------- Затенение под панелью на мобильном ---------- */
+        .backdrop {
+            position: absolute; inset: 0; z-index: 1400;
+            background: rgba(0,0,0,0.4);
+            opacity: 0; pointer-events: none;
+            transition: opacity 0.28s;
+        }
+        .backdrop.visible { opacity: 1; pointer-events: auto; }
+
+        /* ---------- Мобильная адаптация ---------- */
+        @media (max-width: 600px) {
+            .controls {
+                top: auto; bottom: 0; left: 0; right: 0;
+                width: 100%; max-width: 100%;
+                max-height: 70vh;
+                border-radius: 18px 18px 0 0;
+                transform: translateY(105%);
+                box-shadow: 0 -4px 20px rgba(0,0,0,0.2);
+                padding-top: 14px;
+            }
+            .controls.open { transform: translateY(0); }
+
+            /* ручка-полоска сверху шторки */
+            .controls::before {
+                content: '';
+                display: block;
+                width: 40px; height: 4px;
+                background: #ccc; border-radius: 2px;
+                margin: 0 auto 10px auto;
+            }
+
+            .status { font-size: 9px; padding: 4px 8px; }
+            .geo-info { font-size: 9px; max-width: 180px; padding: 6px 8px; }
+            .menu-toggle { width: 44px; height: 44px; font-size: 20px; }
+            .online-badge { font-size: 11px; padding: 6px 10px; }
+        }
+
+        /* На маленьких экранах статус-бар скрываем, чтобы не мешал */
+        @media (max-width: 400px) {
+            .status { display: none; }
         }
     </style>
 </head>
 <body>
     <div id="map"></div>
+
+    <!-- Кнопка открытия панели -->
+    <button class="menu-toggle" id="menuToggle" aria-label="Меню">☰</button>
+
+    <!-- Затенение -->
+    <div class="backdrop" id="backdrop"></div>
+
+    <!-- Индикатор онлайна -->
     <div class="online-badge" id="onlineBadge">🌐 онлайн</div>
 
-    <div class="controls">
-        <b>Лететь к:</b>
-        <button onclick="flyTo(27.988, 86.925, 50000, 0)">🏔️ Эверест (сверху)</button>
-        <button onclick="flyTo(27.988, 86.925, 500, 60)">🏔️ Эверест (с земли)</button>
-        <button onclick="flyTo(43.349, 42.445, 50000, 0)">🏔️ Эльбрус (сверху)</button>
-        <button onclick="flyTo(43.349, 42.445, 500, 60)">🏔️ Эльбрус (с земли)</button>
-        <button onclick="flyTo(53.558, 108.165, 50000, 0)">🌊 Байкал (сверху)</button>
-        <button onclick="flyTo(53.558, 108.165, 500, 60)">🌊 Байкал (с земли)</button>
-
-        <hr>
+    <!-- Панель управления -->
+    <aside class="controls" id="controls">
         <b>📍 Моё местоположение:</b>
         <button onclick="locateMe()">🎯 Найти меня</button>
         <button onclick="followMe(this)" id="followBtn">👣 Следить: выкл</button>
@@ -129,52 +224,50 @@
 
         <hr>
         <b>📥 Офлайн-карта:</b>
-        <button onclick="openDownloadPanel()">📥 Скачать регион</button>
+        <button onclick="toggleDownloadPanel()" id="dlToggleBtn">📥 Скачать регион</button>
+
+        <div class="download-panel" id="downloadPanel">
+            <h3>📥 Скачать регион</h3>
+
+            <button onclick="startBoxSelection()" id="boxSelectBtn" style="margin-top:0;">▭ Выбрать рамкой</button>
+
+            <label>Или координаты (lat/lon):</label>
+            <div class="row">
+                <input type="number" id="latMin" placeholder="lat min" step="0.0001">
+                <input type="number" id="latMax" placeholder="lat max" step="0.0001">
+            </div>
+            <div class="row">
+                <input type="number" id="lonMin" placeholder="lon min" step="0.0001">
+                <input type="number" id="lonMax" placeholder="lon max" step="0.0001">
+            </div>
+
+            <label>Зумы:</label>
+            <div class="row">
+                <input type="number" id="zoomMin" value="10" min="0" max="18">
+                <input type="number" id="zoomMax" value="15" min="0" max="18">
+            </div>
+
+            <label>Что качать:</label>
+            <div class="row" style="font-size:13px; gap:14px;">
+                <label style="flex:1;"><input type="checkbox" id="dlMap" checked> Карта</label>
+                <label style="flex:1;"><input type="checkbox" id="dlDem" checked> Рельеф</label>
+            </div>
+
+            <div class="progress-bar"><div id="progressFill">0%</div></div>
+            <div class="progress-stats" id="progressStats">Готов к старту</div>
+
+            <div class="row" style="margin-top:8px;">
+                <button onclick="startDownload()" id="startDlBtn" style="flex:1; margin:0;">▶️ Старт</button>
+                <button onclick="stopDownload()" id="stopDlBtn" style="flex:1; margin:0;" disabled>⏹ Стоп</button>
+            </div>
+        </div>
+
         <button onclick="showSavedList()">📋 Мои регионы</button>
         <button onclick="clearAllCache()" class="danger">🧹 Очистить весь кеш</button>
 
         <hr>
         <button onclick="resetView()">↩️ Сбросить вид</button>
-    </div>
-
-    <!-- Панель скачивания -->
-    <div class="download-panel" id="downloadPanel">
-        <h3>📥 Скачать регион</h3>
-
-        <label>Способ:</label>
-        <button onclick="startBoxSelection()" id="boxSelectBtn">▭ Выбрать рамкой на карте</button>
-
-        <label>Или координаты (lat/lon):</label>
-        <div class="row">
-            <input type="number" id="latMin" placeholder="lat min" step="0.0001">
-            <input type="number" id="latMax" placeholder="lat max" step="0.0001">
-        </div>
-        <div class="row">
-            <input type="number" id="lonMin" placeholder="lon min" step="0.0001">
-            <input type="number" id="lonMax" placeholder="lon max" step="0.0001">
-        </div>
-
-        <label>Зумы:</label>
-        <div class="row">
-            <input type="number" id="zoomMin" value="10" min="0" max="18">
-            <input type="number" id="zoomMax" value="15" min="0" max="18">
-        </div>
-
-        <label>Что качать:</label>
-        <div class="row" style="font-size:12px;">
-            <label style="flex:1;"><input type="checkbox" id="dlMap" checked> Карта</label>
-            <label style="flex:1;"><input type="checkbox" id="dlDem" checked> Рельеф</label>
-        </div>
-
-        <div class="progress-bar"><div id="progressFill">0%</div></div>
-        <div class="progress-stats" id="progressStats">Готов к старту</div>
-
-        <div class="row" style="margin-top:8px;">
-            <button onclick="startDownload()" id="startDlBtn" style="flex:1;">▶️ Старт</button>
-            <button onclick="stopDownload()" id="stopDlBtn" style="flex:1;" disabled>⏹ Стоп</button>
-        </div>
-        <button onclick="closeDownloadPanel()" style="margin-top:4px;">✖️ Закрыть</button>
-    </div>
+    </aside>
 
     <div class="status" id="status">—</div>
     <div class="error-box" id="errorBox"></div>
@@ -196,6 +289,19 @@
         const TILE_URL_MAP = 'https://tile.opentopomap.org/{z}/{x}/{y}.png';
         const TILE_URL_DEM = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
 
+        // Восстанавливаем последний вид
+        const VIEW_KEY = 'last_view';
+        function loadSavedView() {
+            try {
+                const raw = localStorage.getItem(VIEW_KEY);
+                if (!raw) return null;
+                const v = JSON.parse(raw);
+                if (v && Array.isArray(v.center) && v.center.length === 2) return v;
+            } catch (e) {}
+            return null;
+        }
+        const savedView = loadSavedView();
+
         const map = new maplibregl.Map({
             container: 'map',
             style: {
@@ -210,15 +316,79 @@
                 },
                 layers: [{ id: 'topo', type: 'raster', source: 'topo' }]
             },
-            center: [37.6, 55.7],
-            zoom: 5,
-            pitch: 0,
-            bearing: 0,
+            center: savedView ? savedView.center : [37.6, 55.7],
+            zoom: savedView ? savedView.zoom : 5,
+            pitch: savedView ? (savedView.pitch || 0) : 0,
+            bearing: savedView ? (savedView.bearing || 0) : 0,
             maxPitch: 85
         });
 
         map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }));
         map.addControl(new maplibregl.ScaleControl());
+
+        // Сохраняем вид с задержкой (debounce), чтобы не долбить localStorage
+        let saveTimer = null;
+        function saveView() {
+            clearTimeout(saveTimer);
+            saveTimer = setTimeout(() => {
+                const c = map.getCenter();
+                const v = {
+                    center: [c.lng, c.lat],
+                    zoom: map.getZoom(),
+                    pitch: map.getPitch(),
+                    bearing: map.getBearing()
+                };
+                try { localStorage.setItem(VIEW_KEY, JSON.stringify(v)); } catch (e) {}
+            }, 800);
+        }
+        map.on('moveend', saveView);
+        map.on('pitchend', saveView);
+        map.on('rotateend', saveView);
+
+        // ============================================================
+        // Меню (гамбургер / шторка)
+        // ============================================================
+        const controls = document.getElementById('controls');
+        const menuToggle = document.getElementById('menuToggle');
+        const backdrop = document.getElementById('backdrop');
+
+        function openMenu() {
+            controls.classList.add('open');
+            backdrop.classList.add('visible');
+        }
+        function closeMenu() {
+            controls.classList.remove('open');
+            backdrop.classList.remove('visible');
+        }
+        function toggleMenu() {
+            if (controls.classList.contains('open')) closeMenu();
+            else openMenu();
+        }
+        menuToggle.addEventListener('click', toggleMenu);
+        backdrop.addEventListener('click', closeMenu);
+
+        // Свайп вниз по шторке закрывает её (только на мобильном)
+        let touchStartY = 0;
+        controls.addEventListener('touchstart', (e) => {
+            if (window.innerWidth > 600) return;
+            touchStartY = e.touches[0].clientY;
+        }, { passive: true });
+        controls.addEventListener('touchend', (e) => {
+            if (window.innerWidth > 600) return;
+            const dy = e.changedTouches[0].clientY - touchStartY;
+            if (dy > 80 && controls.scrollTop <= 0) closeMenu();
+        }, { passive: true });
+
+        // Закрываем меню при клике по любой кнопке, кроме тех, что открывают вложенные панели
+        controls.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('click', () => {
+                // не закрываем меню при кликах внутри вложенной панели скачивания
+                if (btn.closest('.download-panel')) return;
+                // не закрываем для тумблеров, где нужно видеть результат
+                if (btn.id === 'followBtn' || btn.id === 'terrainBtn' || btn.id === 'dlToggleBtn') return;
+                if (window.innerWidth <= 600) closeMenu();
+            });
+        });
 
         // ============================================================
         // Онлайн/офлайн индикатор
@@ -251,7 +421,6 @@
         map.on('error', (e) => {
             console.error('MapLibre error:', e);
             const msg = e?.error?.message || 'Ошибка загрузки тайлов';
-            // не спамим одинаковыми ошибками про офлайн-тайлы
             if (msg.includes('Failed to fetch') && !navigator.onLine) return;
             showError(msg);
         });
@@ -266,7 +435,7 @@
             const p = map.getPitch().toFixed(0);
             const b = map.getBearing().toFixed(0);
             statusEl.textContent =
-                `map   lat: ${c.lat.toFixed(4)}  lon: ${c.lng.toFixed(4)}  zoom: ${z}  pitch: ${p}°  bearing: ${b}°`;
+                `lat ${c.lat.toFixed(4)}  lon ${c.lng.toFixed(4)}  z ${z}  pitch ${p}°  brg ${b}°`;
             highlightPitchButton(map.getPitch());
         }
         map.on('move', updateStatus);
@@ -318,28 +487,6 @@
                     btn.classList.remove('active');
                 }
             }
-        }
-
-        // ============================================================
-        // Полёт к точке
-        // ============================================================
-        function flyTo(lat, lon, alt, pitch) {
-            map.flyTo({
-                center: [lon, lat],
-                zoom: getZoomForAltitude(alt),
-                pitch, duration: 3000, essential: true
-            });
-        }
-        function getZoomForAltitude(alt) {
-            if (alt >= 50000) return 5;
-            if (alt >= 30000) return 7;
-            if (alt >= 20000) return 9;
-            if (alt >= 15000) return 10;
-            if (alt >= 10000) return 12;
-            if (alt >= 5000) return 13;
-            if (alt >= 1000) return 15;
-            if (alt >= 500) return 16;
-            return 17;
         }
 
         // ============================================================
@@ -418,10 +565,8 @@
             const speed = c.speed != null ? `${(c.speed * 3.6).toFixed(1)} км/ч` : '—';
             geoInfo.style.display = 'block';
             geoInfo.textContent =
-                `📍 Широта: ${c.latitude.toFixed(6)}\n` +
-                `   Долгота: ${c.longitude.toFixed(6)}\n` +
-                `   Точность: ±${c.accuracy.toFixed(0)} м\n` +
-                `   Курс: ${heading}   Скорость: ${speed}`;
+                `📍 ${c.latitude.toFixed(6)}, ${c.longitude.toFixed(6)}\n` +
+                `±${c.accuracy.toFixed(0)} м  курс ${heading}  ${speed}`;
         }
 
         function handlePosition(pos) {
@@ -505,9 +650,8 @@
         }
 
         // ============================================================
-        // ============ СКАЧИВАНИЕ РЕГИОНА В КЕШ ======================
+        // СКАЧИВАНИЕ РЕГИОНА
         // ============================================================
-
         const downloadPanel = document.getElementById('downloadPanel');
         const progressFill = document.getElementById('progressFill');
         const progressStats = document.getElementById('progressStats');
@@ -520,29 +664,27 @@
         let boxSelectionActive = false;
         let boxSelectionStart = null;
 
-        function openDownloadPanel() {
-            downloadPanel.style.display = 'block';
-            // подставим текущие границы карты как стартовое значение
-            const b = map.getBounds();
-            document.getElementById('latMin').value = b.getSouth().toFixed(4);
-            document.getElementById('latMax').value = b.getNorth().toFixed(4);
-            document.getElementById('lonMin').value = b.getWest().toFixed(4);
-            document.getElementById('lonMax').value = b.getEast().toFixed(4);
-        }
-        function closeDownloadPanel() {
-            downloadPanel.style.display = 'none';
-            if (boxSelectionActive) cancelBoxSelection();
+        function toggleDownloadPanel() {
+            downloadPanel.classList.toggle('open');
+            if (downloadPanel.classList.contains('open')) {
+                const b = map.getBounds();
+                document.getElementById('latMin').value = b.getSouth().toFixed(4);
+                document.getElementById('latMax').value = b.getNorth().toFixed(4);
+                document.getElementById('lonMin').value = b.getWest().toFixed(4);
+                document.getElementById('lonMax').value = b.getEast().toFixed(4);
+            }
         }
 
-        // ---------- Выбор рамкой на карте ----------
+        // ---------- Выбор рамкой ----------
         function startBoxSelection() {
             if (boxSelectionActive) { cancelBoxSelection(); return; }
             boxSelectionActive = true;
             boxSelectionStart = null;
             boxSelectBtn.textContent = '▭ Тащите по карте… (отмена)';
             boxSelectBtn.classList.add('active');
+            // на мобильном закрываем шторку, чтобы освободить карту
+            if (window.innerWidth <= 600) closeMenu();
             map.getCanvas().style.cursor = 'crosshair';
-            // блокируем перетаскивание карты, чтобы не мешало
             map.dragPan.disable();
 
             map.on('mousedown', onBoxDown);
@@ -553,26 +695,30 @@
 
         function onBoxDown(e) {
             if (!boxSelectionActive) return;
-            boxSelectionStart = { x: e.point.x, y: e.point.y };
-            showBoxPreview(e.point.x, e.point.y, e.point.x, e.point.y);
+            const p = e.point || (e.lngLat && map.project(e.lngLat));
+            if (!p) return;
+            boxSelectionStart = { x: p.x, y: p.y };
+            showBoxPreview(p.x, p.y, p.x, p.y);
         }
         function onBoxMove(e) {
             if (!boxSelectionActive || !boxSelectionStart) return;
-            showBoxPreview(boxSelectionStart.x, boxSelectionStart.y, e.point.x, e.point.y);
+            const p = e.point || (e.lngLat && map.project(e.lngLat));
+            if (!p) return;
+            showBoxPreview(boxSelectionStart.x, boxSelectionStart.y, p.x, p.y);
         }
         function onBoxUp(e) {
             if (!boxSelectionActive || !boxSelectionStart) return;
+            const p = e.point || (e.lngLat && map.project(e.lngLat));
+            if (!p) return;
             const p1 = map.unproject([boxSelectionStart.x, boxSelectionStart.y]);
-            const p2 = map.unproject([e.point.x, e.point.y]);
-            const latMin = Math.min(p1.lat, p2.lat);
-            const latMax = Math.max(p1.lat, p2.lat);
-            const lonMin = Math.min(p1.lng, p2.lng);
-            const lonMax = Math.max(p1.lng, p2.lng);
-            document.getElementById('latMin').value = latMin.toFixed(4);
-            document.getElementById('latMax').value = latMax.toFixed(4);
-            document.getElementById('lonMin').value = lonMin.toFixed(4);
-            document.getElementById('lonMax').value = lonMax.toFixed(4);
+            const p2 = map.unproject([p.x, p.y]);
+            document.getElementById('latMin').value = Math.min(p1.lat, p2.lat).toFixed(4);
+            document.getElementById('latMax').value = Math.max(p1.lat, p2.lat).toFixed(4);
+            document.getElementById('lonMin').value = Math.min(p1.lng, p2.lng).toFixed(4);
+            document.getElementById('lonMax').value = Math.max(p1.lng, p2.lng).toFixed(4);
             cancelBoxSelection();
+            // открываем меню обратно, чтобы видеть результат
+            if (window.innerWidth <= 600) openMenu();
         }
 
         function showBoxPreview(x1, y1, x2, y2) {
@@ -601,7 +747,7 @@
         function cancelBoxSelection() {
             boxSelectionActive = false;
             boxSelectionStart = null;
-            boxSelectBtn.textContent = '▭ Выбрать рамкой на карте';
+            boxSelectBtn.textContent = '▭ Выбрать рамкой';
             boxSelectBtn.classList.remove('active');
             map.getCanvas().style.cursor = '';
             map.dragPan.enable();
@@ -615,39 +761,30 @@
             if (map.getSource('box-preview')) map.removeSource('box-preview');
         }
 
-        // отслеживание перемещения мыши при выборе
         map.on('mousemove', (e) => { if (boxSelectionActive) onBoxMove(e); });
-        map.on('touchmove', (e) => {
-            if (boxSelectionActive && e.point) onBoxMove(e);
-        });
+        map.on('touchmove', (e) => { if (boxSelectionActive) onBoxMove(e); });
 
-        // ---------- Вспомогательные: перевод lat/lon → tile x/y ----------
+        // ---------- Утилиты ----------
         function lon2tile(lon, z) { return Math.floor((lon + 180) / 360 * Math.pow(2, z)); }
         function lat2tile(lat, z) {
             const rad = lat * Math.PI / 180;
             return Math.floor((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2 * Math.pow(2, z));
         }
-        function tileUrl(urlTemplate, z, x, y) {
-            return urlTemplate.replace('{z}', z).replace('{x}', x).replace('{y}', y);
+        function tileUrl(t, z, x, y) {
+            return t.replace('{z}', z).replace('{x}', x).replace('{y}', y);
         }
-
-        // ---------- Подсчёт тайлов ----------
         function countTiles(latMin, latMax, lonMin, lonMax, zMin, zMax, includeMap, includeDem) {
             let total = 0;
-            const perZoom = [];
             for (let z = zMin; z <= zMax; z++) {
                 const xMin = lon2tile(lonMin, z);
                 const xMax = lon2tile(lonMax, z);
-                const yMin = lat2tile(latMax, z); // в тайлах Y растёт вниз, поэтому max lat = min y
+                const yMin = lat2tile(latMax, z);
                 const yMax = lat2tile(latMin, z);
                 const n = (xMax - xMin + 1) * (yMax - yMin + 1);
-                let cnt = 0;
-                if (includeMap) cnt += n;
-                if (includeDem) cnt += n;
-                perZoom.push({ z, n, cnt });
-                total += cnt;
+                if (includeMap) total += n;
+                if (includeDem) total += n;
             }
-            return { total, perZoom };
+            return total;
         }
 
         // ---------- Основная функция скачивания ----------
@@ -664,31 +801,24 @@
             const includeDem = document.getElementById('dlDem').checked;
 
             if ([latMin, latMax, lonMin, lonMax].some(v => isNaN(v))) {
-                showError('Заполните координаты или выберите рамкой');
-                return;
+                showError('Заполните координаты или выберите рамкой'); return;
             }
             if (zMin > zMax || zMin < 0 || zMax > 18) {
-                showError('Некорректный диапазон зумов');
-                return;
+                showError('Некорректный диапазон зумов'); return;
             }
             if (!includeMap && !includeDem) {
-                showError('Выберите, что качать');
-                return;
+                showError('Выберите, что качать'); return;
             }
 
-            const { total, perZoom } = countTiles(latMin, latMax, lonMin, lonMax, zMin, zMax, includeMap, includeDem);
+            const total = countTiles(latMin, latMax, lonMin, lonMax, zMin, zMax, includeMap, includeDem);
             if (total === 0) { showError('Нечего качать'); return; }
 
-            // Оценка объёма
-            const avgTileSize = 30 * 1024; // 30 КБ
-            const estBytes = total * avgTileSize;
-            const estStr = (estBytes / 1024 / 1024).toFixed(0) + ' МБ';
-
+            const estStr = (total * 30 * 1024 / 1024 / 1024).toFixed(1);
             const ok = confirm(
                 `Скачать ${total} тайлов?\n\n` +
                 `Регион: lat ${latMin}…${latMax}, lon ${lonMin}…${lonMax}\n` +
                 `Зумы: ${zMin}–${zMax}\n` +
-                `Оценка объёма: ~${estStr}\n\n` +
+                `Оценка объёма: ~${estStr} ГБ\n\n` +
                 `Это может занять от нескольких минут до часа.`
             );
             if (!ok) return;
@@ -698,10 +828,7 @@
             startDlBtn.disabled = true;
             stopDlBtn.disabled = false;
 
-            const stats = {
-                total, done: 0, failed: 0, bytes: 0,
-                startTime: Date.now()
-            };
+            const stats = { total, done: 0, failed: 0, bytes: 0, startTime: Date.now() };
 
             function updateProgress() {
                 const pct = (stats.done / stats.total * 100).toFixed(1);
@@ -719,7 +846,6 @@
                     `Осталось: ~${Math.ceil(eta)} с`;
             }
 
-            // Качаем последовательно с небольшим параллелизмом (3 потока)
             const PARALLEL = 3;
             const jobs = [];
             for (let z = zMin; z <= zMax; z++) {
@@ -729,8 +855,8 @@
                 const yMax = lat2tile(latMin, z);
                 for (let x = xMin; x <= xMax; x++) {
                     for (let y = yMin; y <= yMax; y++) {
-                        if (includeMap) jobs.push({ url: tileUrl(TILE_URL_MAP, z, x, y), type: 'map' });
-                        if (includeDem) jobs.push({ url: tileUrl(TILE_URL_DEM, z, x, y), type: 'dem' });
+                        if (includeMap) jobs.push(tileUrl(TILE_URL_MAP, z, x, y));
+                        if (includeDem) jobs.push(tileUrl(TILE_URL_DEM, z, x, y));
                     }
                 }
             }
@@ -738,18 +864,14 @@
             let idx = 0;
             async function worker() {
                 while (idx < jobs.length && !downloadAbort) {
-                    const job = jobs[idx++];
+                    const url = jobs[idx++];
                     try {
-                        const res = await fetch(job.url, { mode: 'cors', cache: 'force-cache' });
+                        const res = await fetch(url, { mode: 'cors', cache: 'force-cache' });
                         if (res.ok) {
                             const blob = await res.blob();
                             stats.bytes += blob.size;
-                        } else {
-                            stats.failed++;
-                        }
-                    } catch (e) {
-                        stats.failed++;
-                    }
+                        } else stats.failed++;
+                    } catch (e) { stats.failed++; }
                     stats.done++;
                     if (stats.done % 10 === 0) updateProgress();
                 }
@@ -761,13 +883,9 @@
             await Promise.all(workers);
             updateProgress();
 
-            // Сохраняем информацию о регионе
             if (!downloadAbort) {
-                saveRegionInfo({
-                    latMin, latMax, lonMin, lonMax, zMin, zMax,
-                    tiles: stats.done, bytes: stats.bytes,
-                    date: new Date().toISOString()
-                });
+                saveRegionInfo({ latMin, latMax, lonMin, lonMax, zMin, zMax,
+                    tiles: stats.done, bytes: stats.bytes, date: new Date().toISOString() });
                 progressStats.textContent += '\n\n✅ Готово!';
             } else {
                 progressStats.textContent += '\n\n⏹ Остановлено';
@@ -778,33 +896,21 @@
             stopDlBtn.disabled = true;
         }
 
-        function stopDownload() {
-            downloadAbort = true;
-        }
+        function stopDownload() { downloadAbort = true; }
 
-        // ---------- Метаданные регионов в localStorage ----------
+        // ---------- Метаданные ----------
         function saveRegionInfo(info) {
-            const key = 'saved_regions';
-            const list = JSON.parse(localStorage.getItem(key) || '[]');
+            const list = JSON.parse(localStorage.getItem('saved_regions') || '[]');
             list.push(info);
-            localStorage.setItem(key, JSON.stringify(list));
+            localStorage.setItem('saved_regions', JSON.stringify(list));
         }
         function getSavedRegions() {
             return JSON.parse(localStorage.getItem('saved_regions') || '[]');
         }
-        function deleteRegionInfo(idx) {
-            const list = getSavedRegions();
-            list.splice(idx, 1);
-            localStorage.setItem('saved_regions', JSON.stringify(list));
-            showSavedList();
-        }
 
         function showSavedList() {
             const list = getSavedRegions();
-            if (list.length === 0) {
-                alert('Пока нет сохранённых регионов');
-                return;
-            }
+            if (list.length === 0) { alert('Пока нет сохранённых регионов'); return; }
             let msg = 'Сохранённые регионы:\n\n';
             list.forEach((r, i) => {
                 msg += `${i + 1}. lat ${r.latMin.toFixed(2)}…${r.latMax.toFixed(2)}, ` +
@@ -813,21 +919,17 @@
                        `${(r.bytes / 1024 / 1024).toFixed(0)} МБ\n` +
                        `   ${new Date(r.date).toLocaleString()}\n\n`;
             });
-            msg += '\nОчистить весь кеш: кнопка «🧹 Очистить весь кеш».';
             alert(msg);
         }
 
-        // ---------- Очистка кеша ----------
         async function clearAllCache() {
             if (!confirm('Очистить ВЕСЬ офлайн-кеш тайлов? Это удалит все скачанные регионы.')) return;
             try {
                 const keys = await caches.keys();
                 for (const k of keys) await caches.delete(k);
                 localStorage.removeItem('saved_regions');
-                alert('Кеш очищен. Тайлы будут загружаться из сети.');
-            } catch (e) {
-                showError('Ошибка очистки: ' + e.message);
-            }
+                alert('Кеш очищен.');
+            } catch (e) { showError('Ошибка очистки: ' + e.message); }
         }
     </script>
 </body>
